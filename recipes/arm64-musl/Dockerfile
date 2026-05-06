@@ -22,7 +22,9 @@ RUN apk add --no-cache \
         ccache \
         xz \
         patch \
-        # extra packages required for creating the musl based cross-compiler 
+        rust=1.87.0-r1 \
+        cargo=1.87.0-r1 \
+        # extra packages required for creating the musl based cross-compiler
         rsync make gcc g++ bzip2 git
 
 COPY <<-EOF /config/config.mak
@@ -45,6 +47,25 @@ RUN RELEASE="3635262e4524c991552789af6f36211a335a77b3" && \
     make -I /config install && \
     cd / && \
     rm -rf /musl-cross-make-${RELEASE}/ ${RELEASE}.tar.gz
+
+# Install the aarch64-unknown-linux-musl cross-compilation target stdlib.
+# The version must match Alpine's rust package (see pinned version above)
+RUN RUST_STD_VERSION="1.87.0" && \
+    RUST_STD_SHA256="15fd0652e2f3a8b678be8a83e396a1103fb1bb941afabe3fdaec706f3bdc85d0" && \
+    wget -O /tmp/rust-std.tar.xz \
+      "https://static.rust-lang.org/dist/rust-std-${RUST_STD_VERSION}-aarch64-unknown-linux-musl.tar.xz" && \
+    echo "${RUST_STD_SHA256}  /tmp/rust-std.tar.xz" | sha256sum -c - && \
+    tar -xJf /tmp/rust-std.tar.xz -C /tmp && \
+    cp -r /tmp/rust-std-${RUST_STD_VERSION}-aarch64-unknown-linux-musl/rust-std-aarch64-unknown-linux-musl/lib/rustlib/aarch64-unknown-linux-musl \
+      /usr/lib/rustlib/ && \
+    rm -rf /tmp/rust-std*
+
+# Configure Cargo to use the musl cross-compiler as linker for aarch64
+COPY <<-EOF /usr/local/cargo/config.toml
+  [target.aarch64-unknown-linux-musl]
+  linker = "/opt/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc"
+EOF
+ENV CARGO_HOME=/usr/local/cargo
 
 COPY --chown=node:node run.sh /home/node/run.sh
 
